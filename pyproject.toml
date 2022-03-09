@@ -1,3 +1,22 @@
+[tool.poetry]
+name = "picam"
+version = "0.1.0"
+description = "CLI tool for Raspberry Pi cameras."
+authors = ["Yunhyeon Jeong <jjj999to@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = ">=3.7,<3.11"
+click = "^8.0.4"
+picamera = "^1.13"
+"RPI.GPIO" = "^0.7.1"
+
+[tool.poetry.dev-dependencies]
+mkdocs-material = "^8.2.5"
+
+[tool.poetry.scripts]
+picam = "picam.cli:main"
+
 [build-system]
-requires = ["wheel", "setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

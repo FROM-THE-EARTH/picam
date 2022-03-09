@@ -1,11 +1,10 @@
-Pipfile.lock
 build/
 dist/
-*.drawio
-*.egg-info/
+poetry.toml
+site/
 .env
+*.egg-info/
 *.log
 __pycache__/
-site/
+.venv/
 .vscode/
-playground/
