@@ -27,6 +27,7 @@ theme:
 nav:
   - Home: index.md
   - CLI: cli.md
+  - flowchart: flowchart.md
 
 markdown_extensions:
   - admonition
@@ -45,5 +46,3 @@ extra:
 
 plugins:
   - search
-  - mkdocstrings:
-      default_handler: python
