@@ -136,12 +136,10 @@ def main(
     resolution: t.Tuple[int, int],
     start_with_low: bool,
     timeout: float,
-
 ) -> None:
-    start_level = not start_with_low
     with IORecorder(pin, fname=fname, resolution=resolution) as rec:
         rec.start_record(
             interval=interval,
             timeout=timeout,
-            start_level=start_level,
+            start_level=not start_with_low,
         )
