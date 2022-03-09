@@ -1,160 +1,123 @@
 from __future__ import annotations
+import datetime
 import os
 import time
 import threading
 import typing as t
 
 import picamera
-from pisat.handler import DigitalInputHandlerBase
-from pisat.util.about_time import get_time_stamp
-
-from .utils import IterSingleton
+import RPI.GPIO as gpio
 
 
-_INF = float("inf")
+def _get_timestamp(
+    tag: t.Optional[str] = None,
+    suffix: t.Optional[str] = None,
+) -> str:
+    timestamp = datetime.datetime.now().strftime("%y%m%d-%H:%M:%S")
+    if tag is not None and len(tag):
+        timestamp = "-".join(tag, timestamp)
+    if suffix is not None and len(suffix):
+        timestamp = ".".join(timestamp, suffix)
+    return timestamp
 
 
-class _GPIOPins(IterSingleton[int]):
-
-    GPIO00 = 0
-    GPIO01 = 1
-    GPIO02 = 2
-    GPIO03 = 3
-    GPIO04 = 4
-    GPIO05 = 5
-    GPIO06 = 6
-    GPIO07 = 7
-    GPIO08 = 8
-    GPIO09 = 9
-    GPIO10 = 10
-    GPIO11 = 11
-    GPIO12 = 12
-    GPIO13 = 13
-    GPIO14 = 14
-    GPIO15 = 15
-    GPIO16 = 16
-    GPIO17 = 17
-    GPIO18 = 18
-    GPIO19 = 19
-    GPIO20 = 20
-    GPIO21 = 21
-    GPIO22 = 22
-    GPIO23 = 23
-    GPIO24 = 24
-    GPIO25 = 25
-    GPIO26 = 26
-
-    GPIO_MIN = GPIO00
-    GPIO_MAX = GPIO26
+_video_formats = {
+    "h264",
+    "mjpeg",
+    "yuv",
+    "rgb",
+    "rgba",
+    "bgr",
+    "bgra",
+}
 
 
-class _VideoFormats(IterSingleton[str]):
-
-    h264    = "h264"
-    mjpeg   = "mjpeg"
-    yuv     = "yuv"
-    rgb     = "rgb"
-    rgba    = "rgba"
-    bgr     = "bgr"
-    bgra    = "bgra"
-
-
-GPIOPins = _GPIOPins()
-VideoFormats = _VideoFormats()
-
-
-def isvalid_video_format(path: str) -> bool:
+def _isvalid_video_format(path: str) -> bool:
     ext = os.path.splitext(path)[1]
     if not len(ext):
         return False
-    return ext[1:] in VideoFormats
+    return ext[1:] in _video_formats
 
 
 class IORecorder:
 
     def __init__(
         self,
-        handler: DigitalInputHandlerBase,
+        pin_input: int,
         fname: t.Optional[str] = None,
         resolution: t.Tuple = (640, 480)
     ) -> None:
         if fname is None:
-            fname = get_time_stamp("mov", "h264")
-        elif isvalid_video_format(fname):
+            fname = _get_timestamp("mov", "h264")
+        elif _isvalid_video_format(fname):
             raise ValueError(f"'{fname}' has an invalid extension.")
 
         self._camera = picamera.PiCamera()
         self._camera.resolution = resolution
         self._fname = fname
-        self._handler: DigitalInputHandlerBase = handler
+        self._pin_input = pin_input
+        self._thread: t.Optional[threading.Thread] = None
+
+        gpio.setup(self._pin_input, gpio.IN)
 
     @property
     def is_high(self) -> bool:
-        return self._handler.observe()
+        return bool(gpio.input(self._pin_input))
 
-    def start_record(
+    def _start_record(
         self,
         interval: float = 1.,
         timeout: float = -1,
-        start_with_low: bool = False,
+        start_level: bool = True,
     ) -> None:
         if timeout <= 0:
-            timeout = _INF
-        if start_with_low:
-            while self.is_high:
-                pass
+            timeout = float("inf")
 
-        self._flag = False
+        if start_level:
+            # high --> recording
+            # low  --> not recording
+            should_stop = lambda: not self.is_high
+        else:
+            # high --> not recording
+            # low  --> recording
+            should_stop = lambda: self.is_high
+
+        # Wait for the level to be either expected.
+        while should_stop():
+            pass
+
+        # Start recording
         self._camera.start_recording(self._fname)
-
         time_init = time.time()
         try:
-            while not self.state and not self._flag:
-                if time.time() - time_init >= timeout:
+            while not should_stop():
+                if 0 < timeout <= time.time() - time_init:
                     break
                 self._camera.wait_recording(timeout=interval)
         finally:
             self._camera.stop_recording()
 
-
-class ThreadingIORecorder(IORecorder):
-
-    def __init__(
-        self,
-        handler: DigitalInputHandlerBase,
-        fname: t.Optional[str] = None,
-        resolution: t.Tuple = (640, 480),
-    ) -> None:
-        super().__init__(handler, fname=fname, resolution=resolution)
-
-        self._handler: DigitalInputHandlerBase = handler
-        self._thread: t.Optional[threading.Thread] = None
-
     def start_record(
         self,
         interval: float = 1.,
         timeout: float = -1,
-        start_with_low: bool = False,
-    ) -> ThreadingIORecorder:
+        start_level: bool = True,
+    ) -> IORecorder:
         self._thread = threading.Thread(
-            target=super().start_record,
-            args=(interval, timeout, start_with_low),
+            target=self._start_record,
+            args=(interval, timeout, start_level),
         )
         self._thread.start()
         return self
 
-    def stop_record(self, timeout: float = -1) -> bool:
+    def stop_record(self, timeout: float = -1) -> None:
         if self._thread is None:
             return
 
-        self._flag = True
         self._thread.join(timeout=timeout)
+        self._thread = None
 
-        if not self._thread.is_alive():
-            self._flag = False
-        return self._flag
-
-    def __enter__(self) -> ThreadingIORecorder:
+    def __enter__(self) -> IORecorder:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:

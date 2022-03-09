@@ -1,13 +1,10 @@
 import typing as t
 
 import click
-import pigpio
-from pisat.handler import PigpioDigitalInputHandler
 
 from .recorder import (
-    GPIOPins,
     IORecorder,
-    isvalid_video_format,
+    _isvalid_video_format,
 )
 
 
@@ -16,7 +13,7 @@ def validate_fname(
     param: str,
     value: t.Optional[str],
 ) -> t.Optional[str]:
-    if value is None or isvalid_video_format(value):
+    if value is None or _isvalid_video_format(value):
         return value
     raise click.BadParameter(f"'{value}' has an invalid extension.")
 
@@ -38,12 +35,9 @@ def validate_pin(
     param: str,
     value: int,
 ) -> int:
-    if value in GPIOPins:
+    if 0 <= value <= 26:
         return value
-    raise click.BadParameter(
-        "Parameter 'pin' must be an integer of "
-        f"{GPIOPins.GPIO_MIN} ~ {GPIOPins.GPIO_MAX}."
-    )
+    raise click.BadParameter("Parameter 'pin' must be an integer of 0 ~ 26.")
 
 
 def validate_resolution(
@@ -98,12 +92,7 @@ def validate_timeout(
     return timesum
 
 
-@click.group()
-def main() -> None:
-    pass
-
-
-@main.command()
+@click.command()
 @click.argument(
     "pin",
     type=int,
@@ -140,7 +129,7 @@ def main() -> None:
     "--timeout",
     callback=validate_timeout,
 )
-def iorec(
+def main(
     pin: int,
     fname: t.Optional[str],
     interval: float,
@@ -149,11 +138,10 @@ def iorec(
     timeout: float,
 
 ) -> None:
-    pi = pigpio.pi()
-    handler = PigpioDigitalInputHandler(pi, pin, pulldown=True)
-    recorder = IORecorder(handler, fname=fname, resolution=resolution)
-    recorder.start_record(
-        interval=interval,
-        timeout=timeout,
-        start_with_low=start_with_low,
-    )
+    start_level = not start_with_low
+    with IORecorder(pin, fname=fname, resolution=resolution) as rec:
+        rec.start_record(
+            interval=interval,
+            timeout=timeout,
+            start_level=start_level,
+        )
